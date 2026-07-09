@@ -127,6 +127,40 @@ standalone introduction in [`docs/language.md`](docs/language.md).
   grammar guarantees the composition of those deviations is non-interfering and
   deterministically emitted.
 
+## Estimating complexity in the generative era
+
+When a model can emit thousands of lines from a short prompt, **lines of code stop measuring
+anything** — the generated artifact is derived, cheap, and disposable. What stays scarce is the
+set of decisions someone had to get right and must review. grammapy puts that set in the
+representation: a system is a grammar of decision points plus a spec that states only **deviations
+from declared defaults**. So a natural complexity driver sits in the model itself —
+
+> the **shape-weighted count of deviations** a spec makes against its grammar.
+
+This is essential complexity in Brooks's sense, and a design-time cousin of established structural
+metrics — McCabe's cyclomatic complexity counts decision points in control flow; function points
+count user-visible functions. Unlike lines of code, it **survives generation**: re-emit the same
+spec in another language or framework and the count is unchanged.
+
+The estimate is weighted, not a raw sum, because combination shape drives cognitive load:
+
+- an independent **`Accumulate`** item (one more validation rule) is light;
+- a **`Fold`** where items conflict — especially a non-commutative one needing an explicit
+  ordering decision — is heavier;
+- a **`Scope`** with deep reachability obligations, or a cross-domain seam, heavier still.
+
+**What it deliberately does not measure:** the interior of opaque atoms — the bespoke business
+logic, which is most of a real service. Two specs with equal deviation counts can hide a one-liner
+or a 2000-line solver behind an atom. So this drives **composition/specification complexity** — the
+wiring you reason about and review — not total complexity. The boundary is exactly the atom's
+declared footprint, and it is visible, not hidden.
+
+Two honest caveats, in keeping with the rest of this project: the measure is **grammar-relative**
+(comparable only within a grammar version — richer defaults mean fewer deviations), and it is a
+**hypothesis, not a validated metric**. It needs calibration against real effort and defect data
+before any number it produces is trusted — and especially before it is ever billed against, or
+people will push complexity into atoms to game the count.
+
 ## Design foundations
 
 The architecture borrows deliberately from established results rather than inventing new
