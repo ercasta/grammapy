@@ -1,0 +1,20 @@
+[project]
+name = "grammapy"
+version = "0.0.1"
+description = "A grammar-based system for generating software from deviations-from-default."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+# Roadmap step 6 pulls in hypothesis for property-testing the combinators;
+# step 5 pulls in libcst for round-trippable Python emission. Not needed yet —
+# the current code and its tests run on the standard library alone.
+dev = ["pytest", "hypothesis"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["grammapy"]

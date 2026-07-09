@@ -2,7 +2,9 @@
 
 **A grammar-based system for generating software from deviations-from-default.**
 
-> Status: design document / implementation driver. No code yet — see [roadmap](#roadmap).
+> Status: implementation started. Roadmap step 2 (domain decision points) is documented and
+> step 3 (channel substrate + disjoint-writes check) has a first tested slice — see
+> [roadmap](#roadmap).
 
 ## The problem
 
@@ -169,3 +171,5 @@ mapping is in the design doc.
   survey, decidability limits, and the language design (§11).
 - [`docs/language.md`](docs/language.md) — a standalone introduction to the specification and
   grammar language, for readers who want the language without the whole design rationale.
+- [`docs/rest-domain.md`](docs/rest-domain.md) — roadmap step 2: the first domain's decision
+  points, each wired to a combinator, with the channel vocabulary the code implements against.
