@@ -18,11 +18,11 @@ Instead of generating code from scratch, grammapy generates it from a spec that 
 **deviations from declared defaults**, via a grammar where every decision point has an
 explicit, provably safe way of combining simultaneous deviations. Concretely:
 
-- A feature is only admitted into the grammar if its combination behavior with every other
-  feature at the same decision point is provably sound — checked once, at design time, not
-  discovered later at runtime or in production.
-- Every nonterminal (decision point) is classified into one of four combination shapes, each
-  with its own soundness proof:
+- A feature is only admitted if its combination behavior with every other feature at the same
+  decision point is provably sound — checked once, at design time, not discovered later at
+  runtime or in production.
+- Every decision point is one of just **four combination shapes**, realized as four built-in
+  combinators, each proven sound once:
 
   | Shape | Combination law |
   |---|---|
@@ -31,11 +31,17 @@ explicit, provably safe way of combining simultaneous deviations. Concretely:
   | **Semilattice fold** | combine via a declared commutative/associative join |
   | **Binder-scoped reachability** | every control-emitting leaf has a covering handler ancestor |
 
-- Bespoke business logic doesn't need to fit the grammar at all — it enters as a **typed
-  callback atom**: a function with a declared input/output footprint, checked against the
-  channels the surrounding grammar exposes to it, but otherwise unanalyzed.
-- Adding a new deviation, or a new nonterminal, requires only a **local** proof about that
-  nonterminal, never a global re-verification of the whole system.
+- Those four are the *entire* built-in vocabulary. A domain adds only **atoms** (bespoke behavior
+  behind a declared footprint) and **wiring** (which combinator hosts which atoms) — never new
+  combinators — so adding a feature is a **local** change that inherits its host combinator's
+  proof, never a global re-verification.
+- Bespoke business logic enters as a **typed callback atom**: a declared input/output footprint,
+  checked against the channels the grammar exposes to it, otherwise unanalyzed, with its body in a
+  user-owned file the generator never overwrites.
+- **Grammars compose across domains.** There is one grammar per software category (REST services,
+  data pipelines, …), but a nonterminal from one domain can be used inside another as a typed atom
+  — checked structurally through the shared substrate, without inspecting or trusting the other
+  domain's internals. Cross-domain composition is a designed feature, not a boundary.
 
 This is **not** a claim that generated programs are bug-free or terminate. The guarantee is
 narrower and more practical: **composing already-accepted deviations never silently breaks
@@ -130,9 +136,10 @@ mapping is in the design doc.
 
 ## Scope and limits
 
-- One grammar per software category; cross-domain composition needs a shared typed
-  substrate, not a shared vocabulary.
-- Soundness, not completeness — interaction shapes not yet classified are refused
+- No single universal grammar — one per software category. Grammars **do** compose across
+  domains through the shared typed substrate (not a shared vocabulary), but the cross-domain
+  data adapters that composition needs are not automatic (cf. MLIR lowering passes).
+- Soundness, not completeness — interaction shapes not served by a combinator are refused
   admission, not silently assumed safe.
 - No termination or general runtime-correctness guarantee, by design.
 - The guarantee is conditional on productions honestly declaring their read/write footprint,
@@ -141,7 +148,8 @@ mapping is in the design doc.
 ## Roadmap
 
 1. Pick one target domain (REST/CRUD services).
-2. Hand-classify 5–8 real decision points into the four combination shapes.
+2. Enumerate 5–8 real decision points and wire each into one of the four combinators (a spike
+   scale — a genuinely useful domain needs dozens; the wiring is the real design cost).
 3. Implement the channel-type system and a disjointness checker, with rejection messages
    that name the conflicting deviations and shared channel.
 4. Implement the control-severity lattice, binder/reachability checking, and a DCG-style
@@ -152,6 +160,8 @@ mapping is in the design doc.
    the diff stays within that deviation's declared footprint.
 8. Generate one working module end-to-end, including an opaque atom and a regeneration
    cycle, before expanding further.
+9. Only then: add a second domain and cross-domain import (§4.4), using MLIR's dialect model
+   as the architectural reference.
 
 ## Documentation
 
