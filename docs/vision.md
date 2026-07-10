@@ -325,6 +325,18 @@ to inspect or trust `B`'s internal derivation logic — the same guarantee a typ
 gives an ordinary function call, generalized to this system's four combination shapes. This
 is the operative content of "island grammar" composition (§5.4, §7.6).
 
+**Two capabilities, one substrate — do not conflate them.** (a) *Swapping* alternatives within one
+axis (a `sql` vs `file` persistence, a FastAPI vs Flask serving layer) is **not** cross-domain
+import at all; it is an exclusive-`Choice` whose productions present the *same* channel contract, so
+a swap is one deviation and everything downstream — written against the channels, not the backend —
+is untouched. (b) *Combining* different axes (a pandas pipeline hosted inside a REST endpoint) **is**
+cross-domain import, checked at the seam through footprints, but requiring hand-written adapters
+between channel types (§6, limit 5). The swap in (a) is also where the system earns its keep by
+*rejecting* invalid compositions at design time: a `Scope` that uses `tx` swapped onto a `file_store`
+that provides no `tx` is refused, not silently emitted. A full worked treatment — the two `Choice`
+axes, the pandas dialect, the adapters, and a swap matrix of which cells typecheck — is in
+[`cross-domain-example.md`](cross-domain-example.md).
+
 ### 4.5 Emission
 
 Once a derivation tree is fully resolved (every nonterminal reduced to a single production,
@@ -597,6 +609,17 @@ is a bare opaque atom (§3.5) with no composition guarantee. The dividing line i
 caught by the non-interference diff test (§6.6, §8): a footprint that lies shows up as an
 out-of-footprint diff on regeneration.
 
+### 7.9 Swapping and composing across domains (`persistence`, `serving`, a pandas dialect)
+Two mechanisms that are easily conflated (§4.4): *swapping* `sql`↔`file` persistence or
+FastAPI↔Flask serving is a single-deviation `Choice` when the alternatives share a channel contract
+(the spec names `store`/`route.*`, never the backend), whereas *combining* a pandas pipeline into a
+REST endpoint is genuine cross-domain import over hand-written adapters (`frame`→`record`). The swap
+is where design-time rejection pays off: a transaction `Scope` that uses `tx`, swapped onto a
+`file_store` that provides none, is refused rather than emitted as a fictional file "transaction".
+The cost is *additive* (each domain and each adapter authored once) rather than *multiplicative*
+(every combination hand-written). Worked in full, with a swap matrix of which cells typecheck, in
+`cross-domain-example.md`.
+
 ---
 
 ## 8. Implementation Roadmap
@@ -641,6 +664,21 @@ The design is only worth building if it beats the tools a team would otherwise r
 distinctive, defensible property is **deterministic, non-interfering, safely-regenerable
 composition** — not code generation per se, which is a solved commodity.
 
+- **vs. a DSL / combinator library with good defaults.** This is the closest honest comparison, and
+  the one to make explicitly. For a single static program the two are near-equivalent in what a user
+  writes — a well-designed combinator DSL already hides most glue. The distinction is not
+  expressiveness or terseness; it is three things an ordinary DSL does not provide: (a) a
+  **deviation-from-default** model, so a spec states only what differs rather than re-spelling the
+  whole composition; (b) a **footprint discipline** that mechanically forbids two composed pieces
+  from secretly touching the same state — a normal combinator library will happily let two
+  accumulated items both mutate one field; and (c) restriction of the combining forms to **four
+  shapes proven non-interfering once**, so the composition law is checked, not merely available. The
+  payoff is not on one program; it is across **change** (regeneration asserts non-interference),
+  **N-way combination** (local checks inheriting one proof instead of an O(N²) hand-audit), and
+  **cross-domain** composition of dialects through the shared substrate (§4.4). Put sharply: an
+  ordinary DSL gives you combining *forms*; this gives you combining forms that *default*, *check
+  footprints*, and *carry a soundness proof* — and a worked contrast is
+  [`order-example.md`](order-example.md).
 - **vs. Rails/Django scaffolding, Yeoman, `create-*` generators.** These emit a one-shot starting
   point with no algebra for combining options and no story for re-running after the code diverges
   (the generation-gap problem, §10). This design's entire content is the combination algebra and
@@ -664,6 +702,19 @@ composition** — not code generation per se, which is a solved commodity.
 The honest one-liner: existing tools generate code; this generates *safe combinations of
 deviations* and re-generates them after change without silent reinteraction — and that is the only
 claim it needs to win on.
+
+**The sharpest single statement of the benefit.** Every time ordinary code places two statements in
+sequence, it bakes in an ordering-and-interaction assumption that is *invisible and unenforced* —
+swap `apply_discount(order)` and `apply_tax(order)` and you get wrong invoices with no error. This
+design takes every seam between pieces and forces it to be one of three *visible* things instead: an
+**explicit** dependency in the declared footprints (derived and reviewable), a **rejected** conflict
+named at design time (the shared channel and both culprits), or a **declared decision** where an
+order is genuinely non-commutative (surfaced, handed back to the user). It never silently guesses an
+order or silently assumes a combination is safe. It does **not** reduce how much bespoke logic is
+written — interiors stay opaque and carry ordinary code's risk — it moves the *seams between* that
+logic from hand-maintained to design-time-checked. The bet worth validating (§8) is that most
+cross-feature defects live in those seams, not the interiors. [`order-example.md`](order-example.md)
+makes this concrete on an `Order` service.
 
 ---
 
@@ -771,7 +822,9 @@ silently accepted.
 ### 11.4 Specs as deviation overlays, addressed by dot-path
 
 A spec states only deviations, so it is a sparse patch and each deviation needs an **address**.
-Addresses are **dot-paths** over named decision points. Decisions taken:
+Addresses are **dot-paths** over named decision points. This is the *extensional* mode of choosing —
+name a locus, set its value; §12 adds an *intensional* mode (state a property, let it resolve across
+every point it touches). Decisions taken:
 
 - **Named and structural, never positional.** Decision points carry stable identifiers; paths
   address those, not indices. A path is a name *into the grammar*, hence a versioned artifact
@@ -841,6 +894,96 @@ against the first end-to-end module before being frozen.
 
 ---
 
+## 12. Two Modes of Choosing: Point Deviations and Cross-Cutting Constraints
+
+A spec resolves a derivation by fixing its open decision points. There are two **structurally
+different** ways to do that, and conflating them is a mistake worth calling out explicitly, because
+only the first is in the language today (§11.4) and the second is a compatible extension with one
+load-bearing rule.
+
+- A **point deviation** is *extensional*: it names one locus by dot-path and sets its value
+  (`.persistence = sql`). Local, imperative, auditable — but it says nothing about any other point,
+  and it presupposes the author knows *which* locus to set.
+- A **cross-cutting constraint** is *intensional*: it states a property of the *whole system*,
+  addressed to no single path, that must (or should) hold at **every decision point where it is
+  relevant, simultaneously**. `requires tx` is not a fact about persistence; it is a fact about the
+  system that happens to constrain persistence, caching, the transaction boundary, and every other
+  point that touches `tx`.
+
+The first says *where* and *what*; the second says *what property*, and lets the system work out
+*where* it bites. This section specifies the second mode so that it never degrades into the silent
+optimizing planner the whole design exists to avoid (§2).
+
+### 12.1 Two strengths of cross-cutting constraint
+
+- **Requirements (hard)** must hold. A requirement **narrows** the admissible productions at every
+  relevant point to those compatible with it. `requires tx` removes `file_store` from the
+  persistence `Choice` wherever a `tx`-using boundary is in scope.
+- **Preferences (soft)** are a declared bias/order over admissible productions, applied at every
+  relevant point to **tie-break** among options a requirement has already left open (`prefer
+  in_memory where admissible`). A preference may only choose among requirement-survivors; it can
+  never overrule a requirement.
+
+### 12.2 Resolution semantics — narrow, then force / surface / reject
+
+At each still-open point, intersect its admissible productions with what the active requirements
+allow. There are exactly three outcomes:
+
+1. **Exactly one survives → forced.** Deterministic and unique — this is unit propagation, the §4.3
+   determinacy analysis run in *selection* mode rather than *rejection* mode.
+2. **Several survive → surfaced** as a design-time decision, *never* a silent pick — unless a
+   *declared* preference tie-breaks to one. This is the §7.3 / §7.7 discipline (promote an
+   unforced choice to an explicit spec-level decision) generalized from one point to many.
+3. **None survives → rejected**, naming the requirement and the point it emptied.
+
+Mechanically this is arc-consistency / constraint propagation over the `Choice` guards, extended
+from spec-keys (§4.3) to capability tags. It is exactly the **cross-tree constraint** of feature
+models (FODA `requires`/`excludes` spanning the feature tree, §5.4) and the generate–define–test of
+**ASP / default logic** (§5.2) — with the design supplying the one rule those frameworks leave open:
+multiplicity of solutions is *surfaced*, not silently collapsed to one.
+
+### 12.3 How the two modes compose
+
+Point pins are hard and win *locally*: set `.persistence = file` and resolution will not override
+you. But a pin that **violates** an active requirement is a conflict — `requires tx` together with
+`.persistence = file` — reported through the **same propose-and-report channel** as a footprint
+clash or a path-presupposition failure (§11.4). The precedence is a lattice, not a priority list:
+requirements bound the space, point pins fix loci within it, preferences tie-break what remains, and
+**every residual ambiguity or pin-vs-requirement clash is surfaced**. No layer silently overrides
+another.
+
+### 12.4 Why a preference may be *declared* but never *inferred*
+
+Resolution must be a **pure function of `(point pins + declared requirements + declared
+preferences)`**. Then it is diffable and changes only when one of those inputs changes — an ordinary,
+reviewable regeneration diff (§10.2–§10.3). An *inferred* preference — the system optimizing a cost
+function it chose for you — reintroduces default drift at the meta level (§2, §10.3): a bespoke,
+invisible cost model silently repicks a production on regeneration, which is the exact failure this
+design forbids of features, now committed by the resolver itself. So a preference is admitted **only**
+as an explicit, versioned policy (the §7.3 pattern), and two preferences that collide at one point
+are surfaced, not averaged. The line is sharp: **forced where unique, declared where preferred,
+surfaced where ambiguous — never inferred.**
+
+### 12.5 Transparency: a forced choice is not a hidden one
+
+Every forced resolution emits a **diffable derivation note** — *"persistence ← sql (forced by
+requirement `tx`; `file_store` excluded: no `tx`)"* — the §10.3 migration-note discipline applied to
+selection. A choice made *for* you that you cannot *see* is still a silent choice; the note is what
+keeps requirement-driven selection inside the no-silent-choices rule (§2).
+
+### 12.6 Status and what it does *not* add
+
+An extension, not yet in the language surface (§11) or the code. It adds **no new combinator and no
+new soundness theory**: it reuses determinacy analysis (§4.3), reachability/binder resolution (§3.3),
+and the propose-and-report error channel (§11.4), and it inherits the four shapes unchanged. What it
+adds is a **second addressing mode** over the same derivation term — intensional constraints beside
+extensional deviations — and the single rule that keeps it from becoming an optimizing planner:
+*narrow deterministically, force only when unique, surface every residual choice, and never infer a
+preference.* Whether the capability-tag vocabulary is worth its authoring cost is, like everything
+here, an empirical question to settle against the first domain that needs it (§8).
+
+---
+
 ## Appendix: Glossary
 
 - **Nonterminal / decision point** — a place in the grammar where the specification determines
@@ -867,3 +1010,16 @@ against the first end-to-end module before being frozen.
   (§3.6).
 - **Dialect** (borrowed from MLIR) — a domain-specific nonterminal vocabulary built on the
   shared universal substrate (§3, §4.4).
+- **Point deviation** — an *extensional* choice: a spec statement that names one decision point by
+  dot-path and sets its value (§11.4, §12).
+- **Cross-cutting constraint** — an *intensional* choice: a property of the whole system, addressed
+  to no single path, that holds at every decision point where it is relevant, simultaneously (§12).
+  Comes in two strengths — requirement and preference.
+- **Requirement** — a *hard* cross-cutting constraint that narrows the admissible productions at
+  every relevant point; unsatisfiable ⇒ rejection (§12.1–§12.2).
+- **Preference (tie-break policy)** — a *soft*, explicitly declared and versioned bias over
+  admissible productions, used only to tie-break among requirement-survivors; never inferred, never
+  overrules a requirement (§12.1, §12.4).
+- **Resolution** — the narrow-then-{force | surface | reject} procedure that fills open decision
+  points from the active point pins and cross-cutting constraints; deterministic where the narrowed
+  set is a singleton, surfaced where it is not (§12.2).

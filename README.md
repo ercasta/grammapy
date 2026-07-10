@@ -115,6 +115,16 @@ standalone introduction in [`docs/language.md`](docs/language.md).
 
 ## Why this, not X
 
+- **vs. a DSL with good defaults**: for a single, static program the two are close in what you
+  write — a good combinator library gets you far. The difference is what an ordinary DSL *doesn't*
+  guarantee: it makes you spell out the whole composition every time (no deviation-from-default
+  model), it lets two composed pieces secretly touch the same state (no footprint check), and
+  combining two DSLs means hand-writing the interop where interactions hide. grammapy's win is not
+  fewer characters on one program; it is three multipliers a DSL doesn't give you — **change**
+  (edit one deviation, regenerate, and non-interference is *asserted*, not hoped), **N-way
+  combination** (the O(N²) interaction surface of hand-composition becomes N local checks that each
+  inherit one proof), and **cross-domain** (composing dialects through the shared substrate is
+  *checked*, not hand-wired — §4.4, the least-proven and highest-upside axis).
 - **vs. scaffolding tools** (Rails/Django generators, Yeoman): no algebra for combining
   options, no story for regenerating after code diverges.
 - **vs. IDL/schema codegen** (OpenAPI, gRPC): generates the contract surface faithfully, but
@@ -126,6 +136,94 @@ standalone introduction in [`docs/language.md`](docs/language.md).
   back-end** — an LLM drafts the deviation spec from natural-language intent, and the
   grammar guarantees the composition of those deviations is non-interfering and
   deterministically emitted.
+
+## The dividing line: footprint, not category
+
+A recurring question: if the system can express *loops*, why can't it just combine *business
+logic*? It can — that is not the boundary. A loop is `Scope` + `Accumulate` over
+footprint-declared atoms; business logic is `Accumulate`/`Fold`/`Scope` over footprint-declared
+atoms. **It is the identical mechanism**, and the system understands a loop body's arithmetic no
+better than it understands a discount rule — in both cases it reasons over the declared footprint
+and treats the interior as opaque. The line is not *grammar constructs vs. your code*. It is:
+
+> the system composes over each piece's **declared footprint** (its interface), never over its
+> **interior**.
+
+So business logic composes exactly to the extent its interaction with other logic is captured by
+its footprint and fits one of the four shapes. What the system will never do is *invent* a
+combination law that isn't one of the four — it refuses rather than guesses. Concretely, an
+ordering assumption between two rules gets exactly one of three visible fates — made **explicit**
+in the footprints (and thus derived and checked), **rejected** at design time with the shared
+channel named, or **quarantined** in a single opaque atom — but *never a silent guess*, which is
+what ordinary code does every time you write two statements in sequence.
+[`docs/order-example.md`](docs/order-example.md) walks a full `Order` service through all three
+fates.
+
+## Swapping and composing across domains
+
+Define a database-persistence and a file-persistence backend, a FastAPI and a Flask serving layer,
+a pandas pipeline domain — can you generate all their compositions (swap the backend, swap the
+framework) without hand-writing each combination? **Yes, within a precise boundary**, and the
+answer splits in two:
+
+- **Swapping alternatives *within* one axis** (file ↔ database, FastAPI ↔ Flask) is an
+  exclusive-**`Choice`**: both productions present the *same typed channel interface* (`store`,
+  `record`, `route.*`, `response`), the rest of the spec is written against those channels and never
+  names the backend, so a swap is **one deviation** with everything downstream untouched.
+- **Combining *different* axes** (a FastAPI endpoint running a pandas pipeline, persisted to a
+  database) is **cross-domain composition** — a nonterminal from one domain is hosted as a typed
+  atom in another, and the seams are checked through footprints.
+
+**What this genuinely buys you:** the cost is **additive** (author each domain once, each
+cross-domain adapter once) rather than **multiplicative** (hand-write every combination). And the
+system decides *which* compositions actually typecheck, at design time — e.g. a spec with a
+transaction boundary swapped onto file persistence is **rejected**, because `file_store` provides no
+`tx` channel, instead of silently emitting a file-backed "transaction" that isn't one.
+
+**What it does *not* do**, stated plainly:
+
+- it does **not** make two alternatives substitutable for free — designing the framework-/storage-
+  neutral **channel contract** both satisfy is the real up-front work; the system makes a leak in it
+  *visible* (a channel-mismatch rejection), it does not design the contract;
+- it does **not** generate the **cross-domain adapters** (`frame → record`, `body → frame`) — those
+  are hand-written lowering passes (opaque atoms, no interior guarantee), and this is the
+  least-proven, furthest-out part of the design;
+- it does **not** cover a *thin* domain's interiors — a pandas pipeline's *wiring* and column
+  footprints are checked (catching silent column overwrites for free), but the transforms themselves
+  are bespoke.
+
+[`docs/cross-domain-example.md`](docs/cross-domain-example.md) works this end to end — the two
+`Choice` axes, the pandas dialect, the adapters, and a swap matrix showing which cells typecheck and
+which are rejected.
+
+## Two ways to make a choice
+
+Can the system choose *for* you — say, pick database over file persistence because you asked for
+transactions and only the database provides them? Yes, but only in a disciplined form, and the
+distinction matters. There are two structurally different ways a spec fixes a decision point:
+
+- **Point deviations** (the model today) are *extensional*: name one decision point by dot-path and
+  set it — `.persistence = sql`. Local, explicit, but it presupposes you know *which* point to set
+  and says nothing about the others.
+- **Cross-cutting constraints** (a compatible extension) are *intensional*: state a property of the
+  whole system — `requires tx` — addressed to no single path, that must hold at **every** decision
+  point where it is relevant, simultaneously. The system then works out *where* it bites.
+
+A cross-cutting constraint resolves by **narrowing** each open point's admissible productions, then:
+
+- **exactly one survives → forced** — deterministic and unique (this is constraint propagation, not
+  search: `requires tx` leaves only `sql_store`);
+- **several survive → surfaced** as a design-time decision, never a silent pick — unless a
+  *declared, versioned* preference tie-breaks among the survivors;
+- **none survives → rejected**, naming the requirement and the point.
+
+The one rule that keeps this from becoming a hidden "optimizing planner" — the very thing the system
+exists to avoid: **forced where unique, declared where preferred, surfaced where ambiguous — never
+inferred.** An *inferred* preference (the system silently optimizing a cost function it chose) would
+repick a production on regeneration and reintroduce default drift. A *declared* preference is a
+reviewable policy, exactly like choosing `deny_overrides`. And every forced choice is emitted as a
+diffable note (*"persistence ← sql, forced by requirement `tx`"*) — a choice made for you that you
+can't see is still a silent choice. Full treatment in [§12 of the design doc](docs/vision.md).
 
 ## Estimating complexity in the generative era
 
@@ -173,8 +271,11 @@ mapping is in the design doc.
 ## Scope and limits
 
 - No single universal grammar — one per software category. Grammars **do** compose across
-  domains through the shared typed substrate (not a shared vocabulary), but the cross-domain
-  data adapters that composition needs are not automatic (cf. MLIR lowering passes).
+  domains through the shared typed substrate (not a shared vocabulary), and swapping alternatives
+  within one axis (persistence backend, serving framework) is a single deviation when they share a
+  channel contract — but the cross-domain data adapters that combining *different* axes needs are
+  hand-written, not automatic (cf. MLIR lowering passes). See
+  [`docs/cross-domain-example.md`](docs/cross-domain-example.md).
 - Soundness, not completeness — interaction shapes not served by a combinator are refused
   admission, not silently assumed safe.
 - No termination or general runtime-correctness guarantee, by design.
@@ -207,3 +308,10 @@ mapping is in the design doc.
   grammar language, for readers who want the language without the whole design rationale.
 - [`docs/rest-domain.md`](docs/rest-domain.md) — roadmap step 2: the first domain's decision
   points, each wired to a combinator, with the channel vocabulary the code implements against.
+- [`docs/order-example.md`](docs/order-example.md) — a full `Order` service walked end to end:
+  each feature classified, each conflict the checker raises, and the one decision it refuses to
+  make for you. The concrete form of "footprint, not category."
+- [`docs/cross-domain-example.md`](docs/cross-domain-example.md) — swapping persistence backends and
+  serving frameworks (a `Choice` per axis) and composing a pandas pipeline across domains: what the
+  system swaps for free, which swaps it rejects at design time, and where hand-written adapters are
+  unavoidable.

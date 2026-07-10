@@ -69,6 +69,17 @@ Records, sequences, and loops are **composites** of these four, not new primitiv
 `Accumulate` of operations. If a genuinely new shape is ever needed, it is added **to the system**
 with its own proof — never authored in a user's grammar (§11.2).
 
+**One consequence worth internalizing early: a loop is not privileged over business logic.** A loop
+is `Scope` + `Accumulate` over footprint-declared atoms; a set of business rules is
+`Accumulate`/`Fold`/`Scope` over footprint-declared atoms — the *identical* mechanism. The system
+understands a loop body's arithmetic no better than it understands a pricing rule; in both cases it
+reasons over the declared footprint and treats the interior as opaque. So the boundary of what the
+language can compose is **not** "grammar constructs vs. your code" but **footprint vs. interior**:
+business logic composes exactly to the extent its interaction with other logic is captured by its
+footprint and fits one of the four shapes. Where it doesn't, you either make the data-flow explicit
+(and it becomes composable) or quarantine it in one atom — never a silent guess.
+[`order-example.md`](order-example.md) walks this line on a full service.
+
 ---
 
 ## 3. Grammar mode: defining nonterminals
